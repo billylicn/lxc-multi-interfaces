@@ -2,7 +2,7 @@
 
 echo -e "\n=== 多网卡出口自动配置脚本 ===\n"
 
-read -p "请输入ipv4最后一段数字: " start_last_octet
+read -p "请输入ipv4最后一段数字" start_last_octet
 if ! [[ "$start_last_octet" =~ ^[0-9]+$ ]] || [ "$start_last_octet" -lt 2 ] || [ "$start_last_octet" -gt 254 ]; then
     echo "错误：请输入 2~254 之间的整数"
     exit 1
