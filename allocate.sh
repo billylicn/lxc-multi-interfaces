@@ -20,22 +20,32 @@ fi
 
 clear
 echo -e "${CYAN}=========================================${NC}"
-echo -e "${CYAN}      多网卡自动配置与检测脚本 v2.0      ${NC}"
+echo -e "${CYAN}      多网卡自动配置与检测脚本 v2.1      ${NC}"
 echo -e "${CYAN}=========================================${NC}"
 
-# 1. 获取用户输入 IP 后缀
-echo -e "${YELLOW}请输入 IP 最后一段的数字 (例如: 101):${NC}"
-read -p "> " IP_SUFFIX
+# 1. 获取用户输入 IP 后缀 (双重确认)
+while true; do
+    echo -e "${YELLOW}请输入 IP 最后一段的数字 (例如: 101):${NC}"
+    read -p "> " IP_SUFFIX
+    
+    # 简单的数字检查
+    if ! [[ "$IP_SUFFIX" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}错误: 请输入有效的数字！${NC}"
+        continue
+    fi
 
-# 简单的数字检查
-if ! [[ "$IP_SUFFIX" =~ ^[0-9]+$ ]]; then
-    echo -e "${RED}错误: 请输入有效的数字！${NC}"
-    exit 1
-fi
+    echo -e "${YELLOW}请再次输入以确认:${NC}"
+    read -p "> " IP_SUFFIX_CONFIRM
+
+    if [ "$IP_SUFFIX" == "$IP_SUFFIX_CONFIRM" ]; then
+        break
+    else
+        echo -e "${RED}两次输入的数字不一致，请重新输入！${NC}\n"
+    fi
+done
 
 # 2. 获取网卡范围
 echo -e "${YELLOW}请输入要配置的网卡范围 (格式如: 1-4 或 1-6):${NC}"
-echo -e "例如输入 '1-4' 将配置 eth1 到 eth4"
 read -p "> " RANGE_INPUT
 
 # 解析范围输入 (例如 1-4)
@@ -58,11 +68,23 @@ if [ "$START_NUM" -gt "$END_NUM" ]; then
     exit 1
 fi
 
+# 3. 风险警告与确认
 echo -e "${CYAN}-----------------------------------------${NC}"
-echo -e "${GREEN}即将配置 eth${START_NUM} 到 eth${END_NUM}，IP后缀 .${IP_SUFFIX}${NC}"
+echo -e "${RED}================= 警 告 =================${NC}"
+echo -e "${RED}即将配置 eth${START_NUM} 到 eth${END_NUM}，IP后缀 .${IP_SUFFIX}${NC}"
+echo -e "${RED}如果IP配置错误，可能导致网络崩溃或连接中断！${NC}"
+echo -e "${RED}=========================================${NC}"
+echo -e "${YELLOW}确认继续吗？(输入 y 确认，其他键取消)${NC}"
+read -p "> " CONFIRM
+
+if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+    echo -e "${RED}用户取消操作，脚本退出。${NC}"
+    exit 1
+fi
+
 echo -e "${GREEN}正在执行配置...${NC}"
 
-# 3. 循环配置网卡
+# 4. 循环配置网卡
 for ((i=START_NUM; i<=END_NUM; i++)); do
     DEV="eth${i}"
     # 计算中间段：100 - i (eth1->99, eth4->96, eth6->94)
@@ -78,7 +100,7 @@ for ((i=START_NUM; i<=END_NUM; i++)); do
     ip addr add "${IP_ADDR}/24" dev "$DEV" 2>/dev/null
     
     # 简单的状态回显
-    if [ $? -eq 0 ] || [ $? -eq 2 ]; then 
+    if [ $? -eq 0 ] || [ $? -eq 2 ]; then # 0=成功, 2=已存在
         echo -e "${GREEN}[完成]${NC}"
     else
         echo -e "${RED}[失败]${NC}"
@@ -90,7 +112,8 @@ echo -e "${GREEN}开始连通性测试 (Ping 1.1.1.1) & 获取出口 IP...${NC}"
 echo -e "${YELLOW}提示: 获取出口IP等待时间较长(${CURL_TIMEOUT}s)，请耐心等待...${NC}"
 echo ""
 
-# 4. 连通性测试 & 出口 IP 检测
+# 5. 连通性测试 & 出口 IP 检测
+# 只有配置成功的网卡才进行测试，避免无意义的等待
 for ((i=START_NUM; i<=END_NUM; i++)); do
     DEV="eth${i}"
     SECOND_OCTET=$((100 - i))
@@ -124,7 +147,7 @@ echo -e "${CYAN}=========================================${NC}"
 echo -e "${CYAN}            网卡配置详情                 ${NC}"
 echo -e "${CYAN}=========================================${NC}"
 
-# 5. 输出 ip addr 详情
+# 6. 输出 ip addr 详情
 for ((i=START_NUM; i<=END_NUM; i++)); do
     DEV="eth${i}"
     # 检查网卡是否存在，存在则显示信息
