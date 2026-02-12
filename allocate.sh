@@ -25,7 +25,7 @@ echo -e "${CYAN}=========================================${NC}"
 
 # 1. 获取用户输入 IP 后缀 (双重确认)
 while true; do
-    echo -e "${YELLOW}请输入 IP 最后一段的数字 (例如: 101):${NC}"
+    echo -e "${YELLOW}请输入 IP 最后一段的数字 (从服务商获得，配置错误可能导致网络崩溃):${NC}"
     read -p "> " IP_SUFFIX
     
     # 简单的数字检查
@@ -45,7 +45,7 @@ while true; do
 done
 
 # 2. 获取网卡范围
-echo -e "${YELLOW}请输入要配置的网卡范围 (格式如: 1-4 或 1-6):${NC}"
+echo -e "${YELLOW}网卡范围 (从服务商获得，配置错误可能导致网络崩溃):${NC}"
 read -p "> " RANGE_INPUT
 
 # 解析范围输入 (例如 1-4)
@@ -71,8 +71,8 @@ fi
 # 3. 风险警告与确认
 echo -e "${CYAN}-----------------------------------------${NC}"
 echo -e "${RED}================= 警 告 =================${NC}"
-echo -e "${RED}即将配置 eth${START_NUM} 到 eth${END_NUM}，IP后缀 .${IP_SUFFIX}${NC}"
-echo -e "${RED}如果IP配置错误，可能导致网络崩溃或连接中断！${NC}"
+echo -e "${RED}⚠即将配置 eth${START_NUM} 到 eth${END_NUM}，IP后缀 .${IP_SUFFIX}${NC}"
+echo -e "${RED}仔细检查！如果IP配置错误，可能导致网络崩溃或连接中断！${NC}"
 echo -e "${RED}=========================================${NC}"
 echo -e "${YELLOW}确认继续吗？(输入 y 确认，其他键取消)${NC}"
 read -p "> " CONFIRM
