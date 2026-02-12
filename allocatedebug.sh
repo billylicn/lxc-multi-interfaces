@@ -54,10 +54,11 @@ for DEV in $NET_INTERFACES; do
         
         if [[ "$LINK_STATE" == *"<"*UP*">"* ]]; then
              # 网卡是 UP 的，但是没有 inet 信息
-             STATUS_MSG="${RED}网卡已启动，但未配置IP${NC}"
+             STATUS_MSG="${RED}网卡已启动，但未配置IP，命令行运行sudo dhclient后重新检测${NC}"
         else
              # 网卡标志里没有 UP
-             STATUS_MSG="${RED}网卡未启动 (DOWN状态)${NC}"
+             STATUS_MSG="${RED}网卡未启动 (DOWN状态)，命令行运行bash <(curl -sL https://github.com/billylicn/lxc-multi-interfaces/blob/main/setup_network.sh)
+后重新检测${NC}"
         fi
         
         echo -e "网卡: ${YELLOW}${DEV}${NC} | 状态: ${STATUS_MSG}"
