@@ -31,64 +31,34 @@ declare -A NIC_REGION_MAP=(
 )
 
 # ==============================
-# 辅助函数：获取公网出口 IP 和地区
+# 获取公网 IP 和简化地区信息
 # ==============================
 get_public_info() {
-    echo -e "${CYAN}正在获取公网出口信息...${NC}"
-    local ip=""
-    local loc=""
-
+    local ip country city
     if command -v curl >/dev/null 2>&1; then
-        response=$(curl -s --max-time 5 https://ipinfo.io/json)
-        ip=$(echo "$response" | grep -oP '"ip":\s*"\K[^"]+')
-        country=$(echo "$response" | grep -oP '"country":\s*"\K[^"]+' || echo "")
-        city=$(echo "$response" | grep -oP '"city":\s*"\K[^"]+' || echo "")
-        region=$(echo "$response" | grep -oP '"region":\s*"\K[^"]+' || echo "")
-        if [[ -n "$country" ]]; then
-            loc="$country"
-            [[ -n "$region" ]] && loc="$loc / $region"
-            [[ -n "$city" ]] && loc="$loc / $city"
-        else
-            loc="未知位置"
-        fi
-    elif command -v wget >/dev/null 2>&1; then
-        response=$(wget -qO- --timeout=5 https://ipinfo.io/json)
-        ip=$(echo "$response" | grep -oP '"ip":\s*"\K[^"]+')
-        country=$(echo "$response" | grep -oP '"country":\s*"\K[^"]+' || echo "")
-        if [[ -n "$country" ]]; then
-            loc="$country"
-        else
-            loc="未知位置"
-        fi
+        local resp=$(curl -s --max-time 5 https://ipinfo.io/json)
+        ip=$(echo "$resp" | grep -oP '"ip":\s*"\K[^"]+')
+        country=$(echo "$resp" | grep -oP '"country":\s*"\K[^"]+' || echo "??")
+        city=$(echo "$resp" | grep -oP '"city":\s*"\K[^"]+' || echo "")
+        [[ "$country" == "HK" ]] && country="🇭🇰 HK"
+        [[ "$country" == "CN" ]] && country="🇨🇳 CN"
+        [[ "$country" == "DE" ]] && country="🇩🇪 DE"
+        # 可继续添加 emoji 国家码
+        loc="$country${city:+ / $city}"
     else
-        echo -e "${RED}❌ 错误：需要 curl 或 wget 来获取公网 IP。${NC}"
-        return 1
+        ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo "N/A")
+        loc="—"
     fi
-
-    if [[ -z "$ip" ]]; then
-        ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || wget -qO- --timeout=5 https://icanhazip.com 2>/dev/null | tr -d ' \t\n\r')
-        loc="(仅IP，无法获取地区)"
-    fi
-
-    if [[ -n "$ip" ]]; then
-        echo -e "${GREEN}🌐 公网出口 IP:${NC} ${BOLD}${ip}${NC}"
-        echo -e "${GREEN}📍 出口地区:${NC} ${loc}"
-    else
-        echo -e "${RED}❌ 无法获取公网 IP。请检查网络连接。${NC}"
-    fi
+    echo -e "${GREEN}🌐 出口: ${BOLD}${ip}${NC} ${loc}"
 }
 
 # ==============================
-# 显示当前路由路径
+# 显示当前路由（极简）
 # ==============================
 show_current_route() {
-    echo -e "${BLUE}📡 当前实际路由路径 (ip route get 1.1.1.1):${NC}"
-    route_line=$(ip route get 1.1.1.1 2>/dev/null | head -n1)
-    if [[ -n "$route_line" ]]; then
-        echo "   $route_line"
-    else
-        echo -e "   ${YELLOW}⚠️  无法获取路由信息${NC}"
-    fi
+    dev=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
+    src=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
+    echo -e "${BLUE}📡 当前出口网卡: ${BOLD}${dev:-?}${NC} (${src:-?})"
 }
 
 # ==============================
