@@ -2,7 +2,7 @@
 # ==============================
 # 自动安装 & 自更新模块（新增）
 # ==============================
-SCRIPT_NAME="nm"
+SCRIPT_NAME="kl"
 INSTALL_PATH="/usr/local/bin/$SCRIPT_NAME"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/billylicn/lxc-multi-interfaces/main/setup_network.sh"
 
@@ -24,8 +24,8 @@ if [[ ! -f "$INSTALL_PATH" ]] && [[ "$0" != "$INSTALL_PATH" ]]; then
     echo -e "${YELLOW}[TIP] 首次运行：正在安装 $SCRIPT_NAME 到 $INSTALL_PATH ...${NC}"
     # 复制当前脚本到目标位置
     if install -m 755 "$0" "$INSTALL_PATH" 2>/dev/null; then
-        echo -e "${GREEN}[OK] 安装成功！下次可直接输入 'nm' 运行。${NC}"
-        echo -e "${CYAN}[TIP] 提示：现在请重新运行 'nm' 以启用自更新功能。${NC}"
+        echo -e "${GREEN}[OK] 安装成功！下次可直接输入 'kl' 运行。${NC}"
+        echo -e "${CYAN}[TIP] 提示：现在请重新运行 'kl' 以启用自更新功能。${NC}"
         exit 0
     else
         echo -e "${RED}[ERR] 安装失败，请手动运行 'sudo cp $0 $INSTALL_PATH && sudo chmod +x $INSTALL_PATH'${NC}"
@@ -33,7 +33,7 @@ if [[ ! -f "$INSTALL_PATH" ]] && [[ "$0" != "$INSTALL_PATH" ]]; then
     fi
 fi
 
-# 自更新逻辑（仅当通过 nm 调用时才更新，避免递归）
+# 自更新逻辑（仅当通过 kl 调用时才更新，避免递归）
 if [[ "$0" == "$INSTALL_PATH" ]]; then
     # 尝试从 GitHub 获取最新脚本内容（带超时）
     LATEST_SCRIPT=$(curl -s --max-time 8 "$GITHUB_RAW_URL")
@@ -156,7 +156,7 @@ show_current_route() {
 # 主程序（加 root 检查）
 # ==============================
 if [[ $EUID -ne 0 ]]; then
-    echo -e "${RED}[WARN] 请使用 sudo 运行此脚本（或 'sudo nm'）。${NC}"
+    echo -e "${RED}[WARN] 请使用 sudo 运行此脚本（或 'sudo kl'）。${NC}"
     exit 1
 fi
 
