@@ -178,9 +178,14 @@ echo
 echo
 echo
 echo
-echo -e "=============================="
+echo
+echo
+echo
+echo -e "===================================="
 echo -e "网络出口切换工具 (LXC Systemd 版)"
-echo -e "=============================="
+echo -e "===================================="
+echo
+echo
 get_public_info
 show_current_route
 echo -e "${CYAN}开机预设: ${BOLD}${boot_nic}${NC}"
