@@ -50,7 +50,7 @@ declare -A NIC_GATEWAY_MAP=(
 # ==============================
 get_boot_nic() {
     local config_file="/etc/network/interfaces"
-    local boot_nic="未知"
+    local boot_nic="ETH0 机房出口"
     
     if [ -f "$config_file" ]; then
         # 寻找包含 gateway 关键字的 iface 段落名
