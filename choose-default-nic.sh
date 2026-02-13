@@ -83,6 +83,8 @@ declare -A NIC_REGION_MAP=(
     ["eth6"]="香港HKT家宽"
     ["eth7"]="台湾HINAT家宽"
     ["eth8"]="香港CMHK家宽"
+    ["eth9"]="中国原生IP"
+    ["eth10"]="中国WARPIP"
 )
 declare -A NIC_GATEWAY_MAP=(
     ["eth0"]="10.129.17.1"
@@ -94,6 +96,8 @@ declare -A NIC_GATEWAY_MAP=(
     ["eth6"]="10.94.0.1"
     ["eth7"]="10.93.0.1"
     ["eth8"]="10.92.0.1"
+    ["eth9"]="10.91.0.1"
+    ["eth10"]="10.90.0.1"
 )
 
 # ==============================
