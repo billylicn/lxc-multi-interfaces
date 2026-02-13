@@ -170,17 +170,7 @@ for n in /sys/class/net/eth*; do
 done
 readarray -t nics < <(printf '%s\n' "${nics[@]}" | sort -V)
 
-echo
-echo
-echo
-echo
-echo
-echo
-echo
-echo
-echo
-echo
-echo
+clear
 echo -e "===================================="
 echo -e "网络出口切换工具 (LXC Systemd 版)"
 echo -e "===================================="
