@@ -256,7 +256,7 @@ echo -e "${YELLOW}正在即时切换出口到 $selected_nic...${NC}"
 ip route replace default via "$gateway" dev "$selected_nic" src "$src_ip"
 
 if [[ $? -eq 0 ]]; then
-    echo -e "${GREEN}新的连接将使用 $selected_nic...${NC}，如需及时生效请重启系统${NC}"
+    echo -e "${GREEN}${BOLD}成功！${GREEN}新的连接将使用 $selected_nic...${NC}，如需及时生效请重启系统${NC}"
     get_public_info
     if [[ "$selected_nic" != "$boot_nic" ]]; then
         echo
