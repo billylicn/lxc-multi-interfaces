@@ -4,7 +4,7 @@
 # ==============================
 SCRIPT_NAME="kl"
 INSTALL_PATH="/usr/local/bin/$SCRIPT_NAME"
-GITHUB_RAW_URL="https://raw.githubusercontent.com/billylicn/lxc-multi-interfaces/main/setup_network.sh"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/billylicn/lxc-multi-interfaces/refs/heads/main/choose-default-nic.sh"
 
 # 颜色定义（提前定义，避免首次运行时未定义变量）
 if [[ -t 1 ]]; then
