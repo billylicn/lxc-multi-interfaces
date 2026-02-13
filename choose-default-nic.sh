@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # ==============================
 # 颜色定义
 # ==============================
@@ -45,7 +46,22 @@ declare -A NIC_GATEWAY_MAP=(
 )
 
 # ==============================
-# 获取公网出口信息（已关闭国旗，增加ASN）
+# 获取开机默认配置 (Persistence Check)
+# ==============================
+get_boot_nic() {
+    local config_file="/etc/network/interfaces"
+    local boot_nic="未知"
+    
+    if [ -f "$config_file" ]; then
+        # 寻找包含 gateway 关键字的 iface 段落名
+        # 逻辑：寻找 gateway 行，向上查找最近的 iface 行
+        boot_nic=$(grep -B 10 "gateway" "$config_file" | grep "iface" | awk '{print $2}' | tail -n 1)
+    fi
+    echo "${boot_nic:-None}"
+}
+
+# ==============================
+# 获取公网出口信息
 # ==============================
 get_public_info() {
     local ip country city asn resp
@@ -55,17 +71,13 @@ get_public_info() {
             ip=$(echo "$resp" | grep -oP '"ip":\s*"\K[^"]+')
             country=$(echo "$resp" | grep -oP '"country":\s*"\K[^"]+')
             city=$(echo "$resp" | grep -oP '"city":\s*"\K[^"]+')
-            # 提取 ASN (ipinfo 返回格式通常为 "ASxxxx Company Name")
             asn=$(echo "$resp" | grep -oP '"org":\s*"\K[^"]+')
         fi
     fi
-
-    # 如果获取失败的保底处理
     ip=${ip:-"N/A"}
     country=${country:-"Unknown"}
     city=${city:-"Unknown"}
     asn=${asn:-"Unknown"}
-
     echo -e "${GREEN}🌐 出口: ${BOLD}${ip}${NC} ${country} / ${city} ASN:${asn}"
 }
 
@@ -73,11 +85,9 @@ get_public_info() {
 # 显示当前出口网卡和源 IP
 # ==============================
 show_current_route() {
-    # 获取默认路由的网卡和源IP
     local route_info=$(ip route get 1.1.1.1 2>/dev/null)
     local dev=$(echo "$route_info" | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
     local src=$(echo "$route_info" | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
-    
     echo -e "${BLUE}📡 当前网卡: ${BOLD}${dev:-?}${NC} (${src:-?})"
 }
 
@@ -88,6 +98,9 @@ if [[ $EUID -ne 0 ]]; then
     echo -e "${RED}⚠️  请使用 sudo 运行此脚本。${NC}"
     exit 1
 fi
+
+# 获取开机配置网卡
+boot_nic=$(get_boot_nic)
 
 # 获取 eth 网卡列表
 declare -a nics=()
@@ -109,6 +122,7 @@ fi
 echo -e "🚀 ${BOLD}当前网络状态：${NC}"
 get_public_info
 show_current_route
+echo -e "${CYAN}💾 开机配置默认网卡: ${BOLD}${boot_nic}${NC}"
 echo
 
 # 构建菜单
@@ -117,9 +131,12 @@ for i in "${!nics[@]}"; do
     nic="${nics[$i]}"
     region="${NIC_REGION_MAP[$nic]:-未配置区域}"
     ip_local=$(ip addr show "$nic" 2>/dev/null | grep -w 'inet' | awk '{print $2}' | cut -d'/' -f1 | head -n1)
-    ip_display=${ip_local:-"无IP，请运行故障检测脚本"}
+    ip_display=${ip_local:-"无IP"}
+    
+    # 标记当前运行中和开机配置
     marker=""
-    [[ "$nic" == "eth0" ]] && marker=" ${YELLOW}(默认)${NC}"
+    [[ "$nic" == "$boot_nic" ]] && marker="${YELLOW} [开机预设]${NC}"
+    
     printf "${GREEN}%2d)${NC} %-6s ${CYAN}[%-14s]${NC} → %s%s\n" \
            $((i+1)) "$nic" "$ip_display" "$region" "$marker"
 done
@@ -164,8 +181,8 @@ fi
 
 src_ip=$(ip addr show "$selected_nic" 2>/dev/null | grep -w 'inet' | awk '{print $2}' | cut -d'/' -f1 | head -n1)
 
-# 切换路由
-echo -e "${YELLOW}🔄 切换出口到 $selected_nic...${NC}"
+# 切换临时路由
+echo -e "${YELLOW}🔄 正在即时切换出口到 $selected_nic...${NC}"
 if [[ -n "$src_ip" ]]; then
     ip route replace default via "$gateway" dev "$selected_nic" src "$src_ip"
 else
@@ -173,10 +190,39 @@ else
 fi
 
 if [[ $? -eq 0 ]]; then
-    echo -e "${GREEN}✅ 切换成功！${NC}\n"
-    echo -e "🎯 ${BOLD}切换后状态：${NC}"
+    echo -e "${GREEN}✅ 临时切换成功！${NC}\n"
+    echo -e "🎯 ${BOLD}切换后即时状态：${NC}"
     get_public_info
     show_current_route
+    echo
+    
+    # ==============================
+    # 持久化询问
+    # ==============================
+    if [[ "$selected_nic" == "$boot_nic" ]]; then
+        echo -e "${BLUE}ℹ️ 该网卡已经是开机预设，无需更改配置文件。${NC}"
+    else
+        read -rp "$(echo -e "${BOLD}❓ 是否要将 ${selected_nic} 设置为下次开机默认出口? (y/n): ${NC}")" save_choice
+        if [[ "$save_choice" =~ ^[Yy]$ ]]; then
+            config_file="/etc/network/interfaces"
+            if [ -f "$config_file" ]; then
+                echo -e "${YELLOW}💾 正在备份并更新 $config_file ...${NC}"
+                cp "$config_file" "${config_file}.bak"
+                
+                # 1. 移除所有现有的 gateway 配置行 (简单粗暴但有效)
+                sed -i '/gateway/d' "$config_file"
+                
+                # 2. 在目标网卡的 iface 段落后添加 gateway
+                # 匹配 iface ethX 这一行，并在其后添加一行 gateway xxx
+                sed -i "/iface $selected_nic/a \    gateway $gateway" "$config_file"
+                
+                echo -e "${GREEN}✅ 已完成开机配置修改。备份文件：${config_file}.bak${NC}"
+            else
+                echo -e "${RED}❌ 错误：未找到 $config_file，无法自动配置持久化。${NC}"
+                echo -e "请手动检查系统的网络配置文件 (如 Netplan 或 NetworkManager)。"
+            fi
+        fi
+    fi
 else
     echo -e "${RED}❌ 切换失败。${NC}"
 fi
