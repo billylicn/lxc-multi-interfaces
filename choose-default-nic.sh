@@ -205,7 +205,7 @@ echo -e "${YELLOW}🔄 正在即时切换出口到 $selected_nic...${NC}"
 ip route replace default via "$gateway" dev "$selected_nic" src "$src_ip"
 
 if [[ $? -eq 0 ]]; then
-    echo -e "${GREEN}✅ 即时切换成功！${NC}\n"
+    echo -e "${GREEN}✅ 软切换成功！如需及时生效请重启系统${NC}\n"
     get_public_info
     
     # 2. 询问持久化
