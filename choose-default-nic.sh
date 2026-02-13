@@ -16,7 +16,7 @@ else
 fi
 
 # ==============================
-# 出口区域/用途名单（硬编码）
+# 出口区域/用途名单
 # ==============================
 declare -A NIC_REGION_MAP=(
     ["eth0"]="机房出口"
@@ -31,7 +31,7 @@ declare -A NIC_REGION_MAP=(
 )
 
 # ==============================
-# 手动维护的网关地址 (用于切换)
+# 手动维护的网关地址
 # ==============================
 declare -A NIC_GATEWAY_MAP=(
     ["eth0"]="10.129.17.1"
@@ -46,33 +46,36 @@ declare -A NIC_GATEWAY_MAP=(
 )
 
 # ==============================
-# 核心功能：获取开机默认配置的网卡
+# 获取开机默认配置的网卡 (兼容 LXC/Debian)
 # ==============================
 get_boot_nic() {
     local boot_nic=""
 
-    # 1. 尝试 NetworkManager (nmcli)
-    if command -v nmcli >/dev/null 2>&1; then
-        # 查找配置了 ipv4.gateway 的连接，并提取对应的设备名
-        boot_nic=$(nmcli -t -f IPV4.GATEWAY,DEVICE connection show | grep -v '^:' | cut -d':' -f2 | head -n1)
+    # 1. 检查 /etc/network/interfaces.d/ (LXC 常见)
+    if [ -d "/etc/network/interfaces.d" ]; then
+        boot_nic=$(grep -r "gateway" /etc/network/interfaces.d/ | head -n1 | grep -oP 'eth[0-9]+' | head -n1)
     fi
 
-    # 2. 尝试 Netplan
-    if [[ -z "$boot_nic" && -d "/etc/netplan" ]]; then
-        # 查找 yaml 文件中 gateway4 或 via 关键字上方的网卡名
-        boot_nic=$(grep -B 5 -rE "gateway4|via" /etc/netplan/ | grep -vE "gateway4|via" | grep -oP "^\s*\Keth[0-9]+" | head -n1)
-    fi
-
-    # 3. 尝试传统接口文件
+    # 2. 检查 /etc/network/interfaces
     if [[ -z "$boot_nic" && -f "/etc/network/interfaces" ]]; then
         boot_nic=$(grep -B 10 "gateway" "/etc/network/interfaces" | grep "iface" | awk '{print $2}' | tail -n 1)
+    fi
+
+    # 3. 检查 systemd-networkd (部分 LXC 模板)
+    if [[ -z "$boot_nic" && -d "/etc/systemd/network" ]]; then
+        boot_nic=$(grep -l "Gateway=" /etc/systemd/network/*.network 2>/dev/null | head -n1 | xargs grep -oP "Name=\K.*")
+    fi
+
+    # 4. 检查 nmcli
+    if [[ -z "$boot_nic" ]] && command -v nmcli >/dev/null 2>&1; then
+        boot_nic=$(nmcli -t -f IPV4.GATEWAY,DEVICE connection show | grep -v '^:' | cut -d':' -f2 | head -n1)
     fi
 
     echo "${boot_nic:-None}"
 }
 
 # ==============================
-# 核心功能：设置持久化网关
+# 执行持久化配置 (兼容 LXC/Debian)
 # ==============================
 set_persistence_config() {
     local target_nic=$1
@@ -80,48 +83,49 @@ set_persistence_config() {
     
     echo -e "${YELLOW}💾 正在尝试写入持久化配置...${NC}"
 
-    # 1. 尝试 NetworkManager
-    if command -v nmcli >/dev/null 2>&1; then
-        # 获取该网卡的连接名
-        local conn_name=$(nmcli -t -f DEVICE,NAME connection show --active | grep "^${target_nic}:" | cut -d':' -f2)
-        if [[ -n "$conn_name" ]]; then
-            # 清除所有连接的网关，然后给目标的加网关
-            local all_conns=$(nmcli -t -f NAME connection show)
-            while read -r name; do
-                nmcli connection modify "$name" ipv4.gateway "" 2>/dev/null
-            done <<< "$all_conns"
+    # 方案 A: 修改 /etc/network/interfaces.d/ 中的文件 (LXC 优先)
+    if [ -d "/etc/network/interfaces.d" ]; then
+        # 寻找包含网段配置的文件，通常是 eth0, setup, 或 50-cloud-init
+        local target_file=$(grep -l "iface $target_nic" /etc/network/interfaces.d/* 2>/dev/null | head -n1)
+        
+        # 如果找不到特定文件，就尝试在 interfaces 中操作，或者新建一个
+        if [ -z "$target_file" ] && [ -f "/etc/network/interfaces" ]; then
+            target_file="/etc/network/interfaces"
+        fi
+
+        if [ -n "$target_file" ]; then
+            cp "$target_file" "${target_file}.bak"
+            # 删除原有的所有 gateway 行（跨文件清理比较难，这里只清理当前文件）
+            sed -i '/gateway/d' /etc/network/interfaces.d/* 2>/dev/null
+            [ -f "/etc/network/interfaces" ] && sed -i '/gateway/d' /etc/network/interfaces
             
-            nmcli connection modify "$conn_name" ipv4.gateway "$target_gw"
-            echo -e "${GREEN}✅ 已通过 nmcli 更新连接 '$conn_name' 的网关为 $target_gw。${NC}"
+            # 插入新网关
+            sed -i "/iface $target_nic/a \    gateway $target_gw" "$target_file"
+            echo -e "${GREEN}✅ 已更新 $target_file 并备份。${NC}"
             return 0
         fi
     fi
 
-    # 2. 尝试 Netplan (警告：Netplan 修改较为复杂，这里提供引导)
-    if [[ -d "/etc/netplan" ]]; then
-        local plan_file=$(ls /etc/netplan/*.yaml | head -n1)
-        if [[ -n "$plan_file" ]]; then
-            echo -e "${RED}⚠️ 系统使用 Netplan，自动修改 YAML 风险较高。${NC}"
-            echo -e "建议手动修改 ${BLUE}$plan_file${NC}，将 gateway 移动到 ${target_nic} 下，然后运行 ${BOLD}netplan apply${NC}。"
-            return 1
+    # 方案 B: systemd-networkd
+    if [ -d "/etc/systemd/network" ]; then
+        local net_file=$(grep -l "Name=$target_nic" /etc/systemd/network/*.network 2>/dev/null | head -n1)
+        if [ -n "$net_file" ]; then
+            cp "$net_file" "${net_file}.bak"
+            # 删除旧 Gateway，在 [Network] 部分添加新 Gateway
+            sed -i '/Gateway=/d' /etc/systemd/network/*.network
+            sed -i "/\[Network\]/a Gateway=$target_gw" "$net_file"
+            echo -e "${GREEN}✅ 已更新 systemd-networkd 配置: $net_file${NC}"
+            return 0
         fi
     fi
 
-    # 3. 尝试传统文件
-    if [[ -f "/etc/network/interfaces" ]]; then
-        cp "/etc/network/interfaces" "/etc/network/interfaces.bak"
-        sed -i '/gateway/d' "/etc/network/interfaces"
-        sed -i "/iface $target_nic/a \    gateway $target_gw" "/etc/network/interfaces"
-        echo -e "${GREEN}✅ 已更新 /etc/network/interfaces 并备份。${NC}"
-        return 0
-    fi
-
-    echo -e "${RED}❌ 无法识别的网络管理工具，请手动配置持久化。${NC}"
+    echo -e "${RED}❌ 未能找到可自动修改的配置文件。${NC}"
+    echo -e "请手动检查: ${BLUE}/etc/network/interfaces.d/${NC} 或 ${BLUE}/etc/systemd/network/${NC}"
     return 1
 }
 
 # ==============================
-# 其他辅助功能 (获取IP、显示路由)
+# 其他辅助功能
 # ==============================
 get_public_info() {
     local ip country city asn resp
@@ -154,7 +158,6 @@ fi
 
 boot_nic=$(get_boot_nic)
 
-# 获取网卡列表
 declare -a nics=()
 for n in /sys/class/net/eth*; do
     [[ -e "$n" ]] && nics+=("$(basename "$n")")
@@ -192,12 +195,10 @@ case "$choice" in
     *) echo "无效输入"; exit 1 ;;
 esac
 
-# 查找网关
 gateway="${NIC_GATEWAY_MAP[$selected_nic]}"
 [[ -z "$gateway" ]] && gateway=$(ip route show dev "$selected_nic" | grep -m1 'via' | awk '{print $3}')
 [[ -z "$gateway" ]] && { echo "无法确定网关"; exit 1; }
 
-# 执行临时切换
 echo -e "${YELLOW}🔄 正在即时切换出口到 $selected_nic...${NC}"
 src_ip=$(ip addr show "$selected_nic" 2>/dev/null | grep -w 'inet' | awk '{print $2}' | cut -d'/' -f1 | head -n1)
 if [[ -n "$src_ip" ]]; then
