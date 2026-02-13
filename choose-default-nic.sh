@@ -117,7 +117,7 @@ for i in "${!nics[@]}"; do
     nic="${nics[$i]}"
     region="${NIC_REGION_MAP[$nic]:-未配置区域}"
     ip_local=$(ip addr show "$nic" 2>/dev/null | grep -w 'inet' | awk '{print $2}' | cut -d'/' -f1 | head -n1)
-    ip_display=${ip_local:-"无IP"}
+    ip_display=${ip_local:-"无IP，请运行故障检测脚本"}
     marker=""
     [[ "$nic" == "eth0" ]] && marker=" ${YELLOW}(默认)${NC}"
     printf "${GREEN}%2d)${NC} %-6s ${CYAN}[%-14s]${NC} → %s%s\n" \
