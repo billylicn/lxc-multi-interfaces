@@ -5,7 +5,6 @@
 SCRIPT_NAME="kl"
 INSTALL_PATH="/usr/local/bin/$SCRIPT_NAME"
 GITHUB_RAW_URL="https://raw.githubusercontent.com/billylicn/lxc-multi-interfaces/refs/heads/main/choose-default-nic.sh"
-
 # 颜色定义（提前定义，避免首次运行时未定义变量）
 if [[ -t 1 ]]; then
     RED=$'\033[0;31m'
@@ -179,16 +178,43 @@ for i in "${!nics[@]}"; do
     printf "${GREEN}%2d)${NC} %-6s ${CYAN}[%-14s]${NC} → %s%s\n" \
            $((i+1)) "$nic" "${ip_local:-无IP}" "$region" "$marker"
 done
+
+echo -e "${CYAN} u)${NC} 手动强制更新脚本"
 echo -e "${YELLOW} r)${NC} 清除开机强制路由 (恢复系统默认)"
 echo -e "${RED} q)${NC} 退出"
 echo
 
 read -rp "$(echo -e "${BOLD}请选择: ${NC}")" choice
 selected_nic=""
+
 case "$choice" in
     [0-9]*)
         idx=$((choice - 1))
         [[ $idx -ge 0 && $idx -lt ${#nics[@]} ]] && selected_nic="${nics[$idx]}"
+        ;;
+    u|U)
+        echo -e "${CYAN}正在执行手动强制更新...${NC}"
+        LATEST_SCRIPT=$(curl -s --max-time 8 "$GITHUB_RAW_URL")
+        if [[ $? -eq 0 ]] && [[ -n "$LATEST_SCRIPT" ]]; then
+            if [[ "$LATEST_SCRIPT" == "#!/bin/bash"* ]]; then
+                echo "$LATEST_SCRIPT" > "$INSTALL_PATH".tmp
+                if [[ $? -eq 0 ]] && [[ -s "$INSTALL_PATH".tmp ]]; then
+                    mv "$INSTALL_PATH".tmp "$INSTALL_PATH"
+                    chmod +x "$INSTALL_PATH"
+                    echo -e "${GREEN}✅ 脚本已强制更新！正在重启新版本...${NC}"
+                    exec "$INSTALL_PATH" "$@"
+                else
+                    rm -f "$INSTALL_PATH".tmp
+                    echo -e "${RED}❌ 更新失败：临时文件写入异常。${NC}"
+                fi
+            else
+                echo -e "${RED}⚠️ 警告：远程脚本不是标准 bash 脚本，跳过更新！${NC}"
+                echo -e "${RED}   请手动检查：$GITHUB_RAW_URL${NC}"
+            fi
+        else
+            echo -e "${RED}❌ 无法从 GitHub 获取脚本，请检查网络连接。${NC}"
+        fi
+        exit 0
         ;;
     r|R)
         echo -e "${YELLOW}正在移除开机强制服务...${NC}"
@@ -213,6 +239,7 @@ if [[ -z "$gateway" ]]; then
 fi
 
 src_ip=$(ip addr show "$selected_nic" 2>/dev/null | grep -w 'inet' | awk '{print $2}' | cut -d'/' -f1 | head -n1)
+
 if [[ -z "$gateway" || -z "$src_ip" ]]; then
     echo -e "${RED}错误: 无法获取 $selected_nic 的网关或IP地址。${NC}"
     exit 1
@@ -220,6 +247,7 @@ fi
 
 echo -e "${YELLOW}正在即时切换出口到 $selected_nic...${NC}"
 ip route replace default via "$gateway" dev "$selected_nic" src "$src_ip"
+
 if [[ $? -eq 0 ]]; then
     echo -e "${GREEN}新的连接将使用 $selected_nic...${NC}，如需及时生效请重启系统${NC}"
     get_public_info
