@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================
-# 颜色定义（兼容不支持颜色的终端）
+# 颜色定义（使用 $'...' 确保转义生效）
 # ==============================
 if [[ -t 1 ]]; then
     RED=$'\033[0;31m'
@@ -31,19 +31,40 @@ declare -A NIC_REGION_MAP=(
 )
 
 # ==============================
-# 获取公网 IP 和简化地区信息
+# 手动维护的网关地址（关键！）
+# 格式: ["网卡名"]="网关IP"
+# ==============================
+declare -A NIC_GATEWAY_MAP=(
+    ["eth0"]="10.129.17.1"
+    ["eth1"]="10.99.0.1"
+    ["eth2"]="10.98.0.1"
+    ["eth3"]="10.97.0.1"
+    ["eth4"]="10.96.0.1"
+    ["eth5"]="10.95.0.1"
+    ["eth6"]="10.94.0.1"
+    ["eth7"]="10.93.0.1"
+    ["eth8"]="10.92.0.1"
+)
+
+# ==============================
+# 获取公网出口信息（精简版）
 # ==============================
 get_public_info() {
-    local ip country city
+    local ip country city loc
     if command -v curl >/dev/null 2>&1; then
         local resp=$(curl -s --max-time 5 https://ipinfo.io/json)
         ip=$(echo "$resp" | grep -oP '"ip":\s*"\K[^"]+')
         country=$(echo "$resp" | grep -oP '"country":\s*"\K[^"]+' || echo "??")
         city=$(echo "$resp" | grep -oP '"city":\s*"\K[^"]+' || echo "")
-        [[ "$country" == "HK" ]] && country="🇭🇰 HK"
-        [[ "$country" == "CN" ]] && country="🇨🇳 CN"
-        [[ "$country" == "DE" ]] && country="🇩🇪 DE"
-        # 可继续添加 emoji 国家码
+        # 国家 emoji 映射（可选）
+        case "$country" in
+            "HK") country="🇭🇰 HK" ;;
+            "CN") country="🇨🇳 CN" ;;
+            "MO") country="🇲🇴 MO" ;;
+            "DE") country="🇩🇪 DE" ;;
+            "TW") country="🇹🇼 TW" ;;
+            *) country="$country" ;;
+        esac
         loc="$country${city:+ / $city}"
     else
         ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo "N/A")
@@ -53,25 +74,24 @@ get_public_info() {
 }
 
 # ==============================
-# 显示当前路由（极简）
+# 显示当前出口网卡和源 IP
 # ==============================
 show_current_route() {
     dev=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
     src=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
-    echo -e "${BLUE}📡 当前出口网卡: ${BOLD}${dev:-?}${NC} (${src:-?})"
+    echo -e "${BLUE}📡 当前出口: ${BOLD}${dev:-?}${NC} (${src:-?})"
 }
 
 # ==============================
-# 主程序开始
+# 主程序
 # ==============================
 
-# 检查 root 权限
 if [[ $EUID -ne 0 ]]; then
-    echo -e "${RED}⚠️  此脚本需要 root 权限来修改默认路由。请使用 sudo 运行。${NC}"
+    echo -e "${RED}⚠️  请使用 sudo 运行此脚本。${NC}"
     exit 1
 fi
 
-# 获取并清理 eth 网卡列表
+# 获取 eth 网卡列表（去重）
 declare -a nics=()
 while IFS= read -r line; do
     [[ -n "$line" ]] || continue
@@ -81,29 +101,28 @@ while IFS= read -r line; do
     fi
 done < <(ls /sys/class/net/ 2>/dev/null)
 
-# 去重
 readarray -t nics < <(printf '%s\n' "${nics[@]}" | sort -u)
 
 if [[ ${#nics[@]} -eq 0 ]]; then
-    echo -e "${RED}❌ 未找到任何以 'eth' 开头的网卡。${NC}"
+    echo -e "${RED}❌ 未找到 eth 网卡。${NC}"
     exit 1
 fi
 
 # ==============================
-# 显示初始状态
+# 显示当前状态
 # ==============================
 echo -e "${BOLD}${GREEN}==============================${NC}"
-echo -e "${BOLD}${GREEN}🚀 当前出口信息（切换前）${NC}"
+echo -e "${BOLD}${GREEN}🚀 当前出口${NC}"
 echo -e "${BOLD}${GREEN}==============================${NC}"
 get_public_info
 show_current_route
 echo
 
 # ==============================
-# 构建彩色菜单
+# 构建菜单
 # ==============================
 echo -e "${BOLD}${BLUE}==============================${NC}"
-echo -e "${BOLD}${BLUE}📋 请选择要设为默认出口的网卡：${NC}"
+echo -e "${BOLD}${BLUE}📋 请选择默认出口网卡：${NC}"
 echo -e "${BOLD}${BLUE}==============================${NC}"
 
 for i in "${!nics[@]}"; do
@@ -111,12 +130,9 @@ for i in "${!nics[@]}"; do
     region="${NIC_REGION_MAP[$nic]:-未配置区域}"
     ip_local=$(ip addr show "$nic" 2>/dev/null | grep -w 'inet' | awk '{print $2}' | cut -d'/' -f1 | head -n1)
     ip_display=${ip_local:-"无IP"}
-
-    # 标记 eth0 为默认
     marker=""
     [[ "$nic" == "eth0" ]] && marker=" ${YELLOW}(默认)${NC}"
-
-    printf "${GREEN}%2d)${NC} %-10s ${CYAN}[%-15s]${NC} → %s%s\n" \
+    printf "${GREEN}%2d)${NC} %-6s ${CYAN}[%-14s]${NC} → %s%s\n" \
            $((i+1)) "$nic" "$ip_display" "$region" "$marker"
 done
 
@@ -124,9 +140,6 @@ echo -e "${YELLOW} r)${NC} 恢复默认出口到 eth0"
 echo -e "${RED} q)${NC} 退出"
 echo
 
-# ==============================
-# 用户输入处理
-# ==============================
 read -rp "$(echo -e "${BOLD}请输入选项: ${NC}")" choice
 
 case "$choice" in
@@ -142,7 +155,7 @@ case "$choice" in
     r|R)
         selected_nic="eth0"
         if ! ip link show "$selected_nic" &>/dev/null; then
-            echo -e "${RED}❌ 网卡 eth0 不存在，无法恢复。${NC}"
+            echo -e "${RED}❌ eth0 不存在。${NC}"
             exit 1
         fi
         ;;
@@ -157,28 +170,29 @@ case "$choice" in
 esac
 
 # ==============================
-# 获取网关和源 IP
+# 获取网关（优先使用手动配置）
 # ==============================
-echo -e "${CYAN}🔍 正在分析网卡 $selected_nic 的路由信息...${NC}"
-
-gateway=$(ip route show dev "$selected_nic" 2>/dev/null | grep -m1 '^default' | awk '{print $3}')
+gateway="${NIC_GATEWAY_MAP[$selected_nic]}"
 if [[ -z "$gateway" ]]; then
-    gateway=$(ip route show dev "$selected_nic" 2>/dev/null | grep -m1 'via' | awk '{print $3}')
+    # Fallback: 尝试自动探测
+    gateway=$(ip route show dev "$selected_nic" 2>/dev/null | grep -m1 'via' | awk '{print $3}' | head -n1)
 fi
 
-src_ip=$(ip route get 1.1.1.1 oif "$selected_nic" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -n1)
-
 if [[ -z "$gateway" ]]; then
-    echo -e "${RED}❌ 无法获取网关地址。请确保该网卡已正确配置网络。${NC}"
-    echo -e "${YELLOW}💡 提示：可手动添加路由，例如：${NC}"
-    echo "   ip route add default via <GATEWAY> dev $selected_nic"
+    echo -e "${RED}❌ 未配置且无法探测到网关。请在脚本中 NIC_GATEWAY_MAP 添加 [$selected_nic] 的网关。${NC}"
     exit 1
 fi
 
+# 获取源 IP（用于保持连接稳定性）
+src_ip=$(ip addr show "$selected_nic" 2>/dev/null | grep -w 'inet' | awk '{print $2}' | cut -d'/' -f1 | head -n1)
+if [[ -z "$src_ip" ]]; then
+    echo -e "${YELLOW}⚠️  未找到 $selected_nic 的 IP，将不指定 src。${NC}"
+fi
+
 # ==============================
-# 执行路由切换
+# 切换默认路由
 # ==============================
-echo -e "${YELLOW}🔄 正在将默认出口切换到 ${BOLD}$selected_nic${NC}${YELLOW} (网关: $gateway)...${NC}"
+echo -e "${YELLOW}🔄 切换默认出口到 ${BOLD}$selected_nic${NC}${YELLOW} (网关: $gateway)...${NC}"
 
 if [[ -n "$src_ip" ]]; then
     ip route replace default via "$gateway" dev "$selected_nic" src "$src_ip"
@@ -191,16 +205,15 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-echo -e "${GREEN}✅ 默认路由已成功更新！${NC}"
+echo -e "${GREEN}✅ 切换成功！${NC}"
 echo
 
 # ==============================
 # 显示切换后状态
 # ==============================
 echo -e "${BOLD}${GREEN}==============================${NC}"
-echo -e "${BOLD}${GREEN}🎯 切换后出口信息${NC}"
+echo -e "${BOLD}${GREEN}🎯 切换后出口${NC}"
 echo -e "${BOLD}${GREEN}==============================${NC}"
 get_public_info
 show_current_route
-
-echo -e "\n${GREEN}✅ 操作完成！当前默认出口已切换至 ${BOLD}$selected_nic${NC}${GREEN}。${NC}"
+echo -e "\n${GREEN}✅ 操作完成。${NC}"
