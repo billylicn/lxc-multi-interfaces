@@ -36,7 +36,7 @@ fi
 # 自动更新检查（仅当通过 kl 调用时触发）
 # ==============================
 if [[ "$0" == "$INSTALL_PATH" ]]; then
-    echo -e "${CYAN}🔍 正在检查脚本更新...${NC}"
+    echo -e "🔍 正在检查脚本更新...${NC}"
     LATEST_SCRIPT=$(curl -s --max-time 8 "$GITHUB_RAW_URL")
     if [[ $? -ne 0 ]] || [[ -z "$LATEST_SCRIPT" ]]; then
         echo -e "${YELLOW}⚠️  无法连接 GitHub 获取最新版本（网络超时或无响应）。${NC}"
@@ -170,7 +170,9 @@ for n in /sys/class/net/eth*; do
 done
 readarray -t nics < <(printf '%s\n' "${nics[@]}" | sort -V)
 
+echo -e "=============================="
 echo -e "网络出口切换工具 (LXC Systemd 版)"
+echo -e "=============================="
 get_public_info
 show_current_route
 echo -e "${CYAN}开机预设: ${BOLD}${boot_nic}${NC}"
