@@ -32,34 +32,41 @@ if [[ ! -f "$INSTALL_PATH" ]] && [[ "$0" != "$INSTALL_PATH" ]]; then
     fi
 fi
 
-# 自更新逻辑（仅当通过 kl 调用时才更新，避免递归）
+# ==============================
+# 自动更新检查（仅当通过 kl 调用时触发）
+# ==============================
 if [[ "$0" == "$INSTALL_PATH" ]]; then
-    # 尝试从 GitHub 获取最新脚本内容（带超时）
+    echo -e "${CYAN}🔍 正在检查脚本更新...${NC}"
     LATEST_SCRIPT=$(curl -s --max-time 8 "$GITHUB_RAW_URL")
-    if [[ $? -eq 0 ]] && [[ -n "$LATEST_SCRIPT" ]]; then
-        # 计算本地和远程的 SHA256
-        LOCAL_SHA=$(sha256sum "$INSTALL_PATH" 2>/dev/null | cut -d' ' -f1)
-        REMOTE_SHA=$(echo "$LATEST_SCRIPT" | sha256sum | cut -d' ' -f1)
-        if [[ "$LOCAL_SHA" != "$REMOTE_SHA" ]]; then
-            # 检查远程脚本是否仍以相同 shebang 开头（防入口变动）
-            if [[ "$LATEST_SCRIPT" == "#!/bin/bash"* ]]; then
+    if [[ $? -ne 0 ]] || [[ -z "$LATEST_SCRIPT" ]]; then
+        echo -e "${YELLOW}⚠️  无法连接 GitHub 获取最新版本（网络超时或无响应）。${NC}"
+    else
+        if [[ "$LATEST_SCRIPT" != "#!/bin/bash"* ]]; then
+            echo -e "${RED}❌ 远程脚本不是有效的 bash 脚本，跳过更新！${NC}"
+        else
+            LOCAL_SHA=$(sha256sum "$INSTALL_PATH" 2>/dev/null | cut -d' ' -f1)
+            REMOTE_SHA=$(echo "$LATEST_SCRIPT" | sha256sum | cut -d' ' -f1)
+
+            if [[ -z "$LOCAL_SHA" ]]; then
+                echo -e "${YELLOW}⚠️  无法计算本地脚本 SHA256，跳过更新。${NC}"
+            elif [[ "$LOCAL_SHA" == "$REMOTE_SHA" ]]; then
+                echo -e "${GREEN}✅ 当前已是最新版本（SHA256: ${LOCAL_SHA:0:8}...）。${NC}"
+            else
+                echo -e "${BLUE}🔄 发现新版本！正在更新...${NC}"
                 echo "$LATEST_SCRIPT" > "$INSTALL_PATH".tmp
                 if [[ $? -eq 0 ]] && [[ -s "$INSTALL_PATH".tmp ]]; then
                     mv "$INSTALL_PATH".tmp "$INSTALL_PATH"
                     chmod +x "$INSTALL_PATH"
-                    echo -e "${GREEN}已更新到最新版本！本次运行使用新版本。${NC}"
-                    # 重新执行新脚本（带原参数）
+                    echo -e "${GREEN}✅ 更新成功！正在重启新版本...${NC}"
                     exec "$INSTALL_PATH" "$@"
                 else
-                    rm -f "$INSTALL_PATH".tmp
-                    echo -e "${YELLOW}更新失败：临时文件写入异常，继续使用旧版本。${NC}"
+                    rm -f "$INSTALL_PATH".tmp 2>/dev/null
+                    echo -e "${RED}❌ 更新失败：临时文件写入异常。${NC}"
                 fi
-            else
-                echo -e "${RED}警告：远程脚本入口可能已变更（非标准 bash 脚本），跳过更新！${NC}"
-                echo -e "${RED}   请手动检查：$GITHUB_RAW_URL${NC}"
             fi
         fi
     fi
+    echo  # 空行，让菜单更清晰
 fi
 
 # ==============================
