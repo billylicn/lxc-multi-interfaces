@@ -75,8 +75,8 @@ fi
 SERVICE_FILE="/etc/systemd/system/force-default-route.service"
 declare -A NIC_REGION_MAP=(
     ["eth0"]="机房出口"
-    ["eth1"]="香港HKT家宽100"
-    ["eth2"]="家宽解锁机"
+    ["eth1"]="香港HKT100家宽"
+    ["eth2"]="global家宽"
     ["eth3"]="澳门Mtel家宽"
     ["eth4"]="朝鲜"
     ["eth5"]="德国原生"
@@ -85,7 +85,8 @@ declare -A NIC_REGION_MAP=(
     ["eth8"]="香港CMHK家宽"
     ["eth9"]="中国原生IP"
     ["eth10"]="中国WARPIP"
-    ["eth11"]="日本Starlink"
+    ["eth11"]="日本Starlink家宽"
+    ["eth12"]="新加坡starhub家宽"
 )
 declare -A NIC_GATEWAY_MAP=(
     ["eth0"]="10.129.17.1"
@@ -100,6 +101,8 @@ declare -A NIC_GATEWAY_MAP=(
     ["eth9"]="10.91.0.1"
     ["eth10"]="10.90.0.1"
     ["eth11"]="10.89.0.1"
+    ["eth12"]="10.88.0.1"
+    
 )
 
 # ==============================
